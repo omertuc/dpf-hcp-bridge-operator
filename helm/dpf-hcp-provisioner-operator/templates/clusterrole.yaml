@@ -103,11 +103,12 @@ rules:
   - list
   - watch
 
-# ClusterVersion permissions (for OpenShift version detection)
+# ClusterVersion and ImageDigestMirrorSet permissions (for OpenShift version detection and mirror-aware image pulls)
 - apiGroups:
   - config.openshift.io
   resources:
   - clusterversions
+  - imagedigestmirrorsets
   verbs:
   - get
   - list

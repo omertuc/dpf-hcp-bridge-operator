@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -46,7 +45,7 @@ type fakeReleaseImageReader struct {
 	callCount int
 }
 
-func (f *fakeReleaseImageReader) GetComponentImage(_ context.Context, _ string, _ string, _ authn.Keychain) (string, error) {
+func (f *fakeReleaseImageReader) GetComponentImage(_ context.Context, _ string, _ string) (string, error) {
 	f.callCount++
 	return f.image, f.err
 }

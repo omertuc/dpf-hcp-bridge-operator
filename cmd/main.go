@@ -315,7 +315,7 @@ func main() {
 		Client: client,
 		Scheme: scheme,
 		Manager: dpuservicetemplate.NewDPUServiceTemplateManager(client,
-			&dpuservicetemplate.RemoteReleaseImageReader{}),
+			dpuservicetemplate.NewRemoteReleaseImageReader(client)),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DPUServiceTemplate")
 		os.Exit(1)

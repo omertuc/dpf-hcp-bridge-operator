@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	"github.com/google/go-containerregistry/pkg/authn"
 	operatorv1alpha1 "github.com/nvidia/doca-platform/api/operator/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -38,7 +37,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	dpuservicev1alpha1 "github.com/nvidia/doca-platform/api/dpuservice/v1alpha1"
-	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/bfocplookup"
 )
 
 const (
@@ -284,35 +282,12 @@ func (m *DPUServiceTemplateManager) resolveARM64OVNImage(ctx context.Context) (r
 	}
 	aarch64Ref := fmt.Sprintf("%s:%s-aarch64", registry, version)
 
-	keychain, err := m.getClusterPullSecretKeychain(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("getting cluster pull secret: %w", err)
-	}
-
-	ovnImage, err := m.ReleaseImageReader.GetComponentImage(ctx, aarch64Ref, ovnKubernetesName, keychain)
+	ovnImage, err := m.ReleaseImageReader.GetComponentImage(ctx, aarch64Ref, ovnKubernetesName)
 	if err != nil {
 		return "", "", fmt.Errorf("resolving aarch64 OVN image from release %q: %w", aarch64Ref, err)
 	}
 
 	return splitImage(ovnImage)
-}
-
-// getClusterPullSecretKeychain reads the global cluster pull secret and returns a keychain.
-func (m *DPUServiceTemplateManager) getClusterPullSecretKeychain(ctx context.Context) (authn.Keychain, error) {
-	secret := &corev1.Secret{}
-	if err := m.client.Get(ctx, types.NamespacedName{
-		Name:      clusterPullSecretName,
-		Namespace: clusterPullSecretNamespace,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("getting secret %s/%s: %w", clusterPullSecretNamespace, clusterPullSecretName, err)
-	}
-
-	dockerConfigJSON, ok := secret.Data[clusterPullSecretKey]
-	if !ok {
-		return nil, fmt.Errorf("secret %s/%s missing key %q", clusterPullSecretNamespace, clusterPullSecretName, clusterPullSecretKey)
-	}
-
-	return bfocplookup.NewKeychainFromDockerConfig(dockerConfigJSON)
 }
 
 func (m *DPUServiceTemplateManager) ensureOVNTemplate(ctx context.Context, namespace string, defaults *DPUServiceTemplateValues, ovnImageRepo, ovnImageTag, sourceImage string) error {

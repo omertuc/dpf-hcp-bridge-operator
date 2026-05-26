@@ -17,34 +17,15 @@ limitations under the License.
 package dpuservicetemplate
 
 import (
-	"archive/tar"
-	"bytes"
 	"encoding/json"
-	"io"
+	"net/url"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func buildTestTar(files map[string][]byte) io.Reader {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for name, content := range files {
-		hdr := &tar.Header{
-			Name: name,
-			Mode: 0600,
-			Size: int64(len(content)),
-		}
-		Expect(tw.WriteHeader(hdr)).To(Succeed())
-		_, err := tw.Write(content)
-		Expect(err).NotTo(HaveOccurred())
-	}
-	Expect(tw.Close()).To(Succeed())
-	return &buf
-}
-
 var _ = Describe("Release Image Utilities", func() {
-	Describe("findComponentInImageReferences", func() {
+	Describe("findComponentInData", func() {
 		It("should find a component by name", func() {
 			refs := imageReferences{}
 			refs.Spec.Tags = []struct {
@@ -64,11 +45,7 @@ var _ = Describe("Release Image Utilities", func() {
 			data, err := json.Marshal(refs)
 			Expect(err).NotTo(HaveOccurred())
 
-			reader := buildTestTar(map[string][]byte{
-				imageReferencesPath: data,
-			})
-
-			result, err := findComponentInImageReferences(reader, "ovn-kubernetes")
+			result, err := findComponentInData(data, "ovn-kubernetes")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal("quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123"))
 		})
@@ -89,23 +66,9 @@ var _ = Describe("Release Image Utilities", func() {
 			data, err := json.Marshal(refs)
 			Expect(err).NotTo(HaveOccurred())
 
-			reader := buildTestTar(map[string][]byte{
-				imageReferencesPath: data,
-			})
-
-			_, err = findComponentInImageReferences(reader, "ovn-kubernetes")
+			_, err = findComponentInData(data, "ovn-kubernetes")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found"))
-		})
-
-		It("should return error when image-references file is missing", func() {
-			reader := buildTestTar(map[string][]byte{
-				"some-other-file": []byte("data"),
-			})
-
-			_, err := findComponentInImageReferences(reader, "ovn-kubernetes")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found in release image"))
 		})
 
 		It("should return error when component has empty image reference", func() {
@@ -124,13 +87,54 @@ var _ = Describe("Release Image Utilities", func() {
 			data, err := json.Marshal(refs)
 			Expect(err).NotTo(HaveOccurred())
 
-			reader := buildTestTar(map[string][]byte{
-				imageReferencesPath: data,
-			})
-
-			_, err = findComponentInImageReferences(reader, "ovn-kubernetes")
+			_, err = findComponentInData(data, "ovn-kubernetes")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("empty image reference"))
+		})
+
+		It("should return error for invalid JSON", func() {
+			_, err := findComponentInData([]byte("not json"), "ovn-kubernetes")
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("dockerConfigCredentialStore", func() {
+		It("should return credentials for matching registry", func() {
+			factory, err := newDockerConfigCredentialStoreFactory([]byte(`{"auths":{"quay.io":{"username":"user","password":"pass"}}}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			store := factory.CredentialStoreFor("quay.io/some/image")
+			u := &url.URL{Host: "quay.io"}
+			user, pass := store.Basic(u)
+			Expect(user).To(Equal("user"))
+			Expect(pass).To(Equal("pass"))
+		})
+
+		It("should return empty credentials for non-matching registry", func() {
+			factory, err := newDockerConfigCredentialStoreFactory([]byte(`{"auths":{"quay.io":{"username":"user","password":"pass"}}}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			store := factory.CredentialStoreFor("other.registry.io/image")
+			u := &url.URL{Host: "other.registry.io"}
+			user, pass := store.Basic(u)
+			Expect(user).To(BeEmpty())
+			Expect(pass).To(BeEmpty())
+		})
+
+		It("should decode base64 auth field", func() {
+			factory, err := newDockerConfigCredentialStoreFactory([]byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"}}}`))
+			Expect(err).NotTo(HaveOccurred())
+
+			store := factory.CredentialStoreFor("quay.io/image")
+			u := &url.URL{Host: "quay.io"}
+			user, pass := store.Basic(u)
+			Expect(user).To(Equal("user"))
+			Expect(pass).To(Equal("pass"))
+		})
+
+		It("should return error for invalid JSON", func() {
+			_, err := newDockerConfigCredentialStoreFactory([]byte("not json"))
+			Expect(err).To(HaveOccurred())
 		})
 	})
 

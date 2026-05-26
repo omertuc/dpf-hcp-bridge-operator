@@ -48,6 +48,7 @@ type DPUServiceTemplateReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch,namespace=openshift-config
+// +kubebuilder:rbac:groups=config.openshift.io,resources=imagedigestmirrorsets,verbs=get;list;watch
 
 // Reconcile ensures DPUServiceTemplates are in sync for a given DPUCluster namespace.
 func (r *DPUServiceTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
