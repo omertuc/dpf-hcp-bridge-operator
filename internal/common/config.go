@@ -30,6 +30,7 @@ import (
 type OperatorConfig struct {
 	BlueFieldOCPLayerRepo string
 	DisableMetalLB        bool
+	NetworkMTU            string
 }
 
 // LoadOperatorConfigFromCR fetches the DPFHCPProvisionerConfig singleton CR.
@@ -50,10 +51,12 @@ func LoadOperatorConfigFromCR(ctx context.Context, c client.Client) (*OperatorCo
 	cfg := &OperatorConfig{
 		BlueFieldOCPLayerRepo: configCR.Spec.BlueFieldOCPLayerRepo,
 		DisableMetalLB:        configCR.Spec.DisableMetalLB,
+		NetworkMTU:            configCR.Spec.NetworkMTU,
 	}
 
 	logger.V(1).Info("Operator config loaded from CR",
 		"blueFieldOCPLayerRepo", cfg.BlueFieldOCPLayerRepo,
-		"disableMetalLB", cfg.DisableMetalLB)
+		"disableMetalLB", cfg.DisableMetalLB,
+		"networkMTU", cfg.NetworkMTU)
 	return cfg, nil
 }

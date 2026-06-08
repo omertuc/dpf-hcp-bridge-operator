@@ -38,6 +38,12 @@ type DPFHCPProvisionerConfigSpec struct {
 	// +kubebuilder:default=false
 	// +optional
 	DisableMetalLB bool `json:"disableMetalLB,omitempty"`
+
+	// NetworkMTU is the MTU for the br-dpu bridge on DPU worker nodes.
+	// Leave empty to inherit MTU from the physical interface.
+	// Set to any valid MTU value as a string (e.g. "1500", "9000").
+	// +optional
+	NetworkMTU string `json:"networkMTU,omitempty"`
 }
 
 // +kubebuilder:object:root=true
