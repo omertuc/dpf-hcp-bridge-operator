@@ -1,4 +1,4 @@
-package dpuworkerocpconfigurator
+package dpuworkerocpconfiguratorcontroller
 
 import (
 	"context"

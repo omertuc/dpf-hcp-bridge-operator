@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -55,6 +56,7 @@ import (
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/bfocplookup"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/csrapproval"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpucluster"
+	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpuworkerocpconfiguratorcontroller"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/finalizer"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/hostedcluster"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/ignitiongenerator"
@@ -304,6 +306,14 @@ func runManager(
 	// Initialize MetalLB Manager
 	metalLBManager := metallb.NewMetalLBManager(client, provisionerRecorder)
 
+	// Initialize DPU Worker OCP Configurator
+	operatorImage, operatorNamespace, err := common.GetOwnImage(context.TODO(), mgr.GetAPIReader())
+	if err != nil {
+		return fmt.Errorf("detecting operator image: %w", err)
+	}
+	setupLog.Info("Detected operator image", "image", operatorImage, "namespace", operatorNamespace)
+	dpuWorkerConfigurator := dpuworkerocpconfiguratorcontroller.New(client, provisionerRecorder, operatorImage, operatorNamespace)
+
 	// Initialize CSR Approver
 	csrApprover := csrapproval.NewCSRApprover(client, csrApprovalRecorder)
 
@@ -320,6 +330,8 @@ func runManager(
 	// 3. MetalLB cleanup (removes IPAddressPool and L2Advertisement)
 	//    Must run after HostedCluster cleanup to avoid deleting IPs while services still exist
 	finalizerManager.RegisterHandler(metallb.NewCleanupHandler(client, provisionerRecorder))
+	// 4. DPU worker configurator cleanup (removes DaemonSet)
+	finalizerManager.RegisterHandler(dpuworkerocpconfiguratorcontroller.NewCleanupHandler(client, provisionerRecorder, operatorNamespace))
 
 	// Initialize Status Syncer for HostedCluster status mirroring
 	statusSyncer := hostedcluster.NewStatusSyncer(client)
@@ -329,20 +341,21 @@ func runManager(
 
 	// Setup main DPFHCPProvisioner controller
 	if err := (&controller.DPFHCPProvisionerReconciler{
-		Client:               client,
-		Scheme:               scheme,
-		Recorder:             provisionerRecorder,
-		ImageLookup:          imageLookup,
-		DPUClusterValidator:  dpuClusterValidator,
-		SecretsValidator:     secretsValidator,
-		SecretManager:        secretManager,
-		MetalLBManager:       metalLBManager,
-		HostedClusterManager: hostedClusterManager,
-		NodePoolManager:      nodePoolManager,
-		FinalizerManager:     finalizerManager,
-		StatusSyncer:         statusSyncer,
-		KubeconfigInjector:   kubeconfigInjector,
-		IgnitionGenerator:    ignitionGenerator,
+		Client:                             client,
+		Scheme:                             scheme,
+		Recorder:                           provisionerRecorder,
+		ImageLookup:                        imageLookup,
+		DPUClusterValidator:                dpuClusterValidator,
+		SecretsValidator:                   secretsValidator,
+		SecretManager:                      secretManager,
+		MetalLBManager:                     metalLBManager,
+		DPUWorkerOCPConfiguratorController: dpuWorkerConfigurator,
+		HostedClusterManager:               hostedClusterManager,
+		NodePoolManager:                    nodePoolManager,
+		FinalizerManager:                   finalizerManager,
+		StatusSyncer:                       statusSyncer,
+		KubeconfigInjector:                 kubeconfigInjector,
+		IgnitionGenerator:                  ignitionGenerator,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up DPFHCPProvisioner controller: %w", err)
 	}

@@ -1,4 +1,4 @@
-package dpuworkerocpconfigurator
+package dpuworkerocpconfiguratorcontroller
 
 import (
 	"context"
@@ -6,8 +6,11 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,27 +22,28 @@ import (
 )
 
 const (
-	DaemonSetName    = "dpu-worker-ocp-configurator"
-	conditionType    = "DPUWorkerConfigured"
-	initContainerName = "setup"
-	mainContainerName = "p0-routing"
+	DaemonSetName          = "dpu-worker-ocp-configurator"
+	conditionType          = "DPUWorkerConfigured"
+	initContainerName      = "setup"
+	mainContainerName      = "p0-routing"
+	legacyMachineConfigName = "dpu-worker-configuration"
 )
 
-// DPUWorkerOCPConfigurator manages a DaemonSet that configures networking on DPU worker nodes.
+// DPUWorkerOCPConfiguratorController manages a DaemonSet that configures networking on DPU worker nodes.
 // It replaces the MachineConfig approach (which requires reboots) with a privileged DaemonSet
 // that runs init containers for one-shot setup and a long-running container for route reconciliation.
-type DPUWorkerOCPConfigurator struct {
-	client   client.Client
-	recorder record.EventRecorder
-	image    string
+type DPUWorkerOCPConfiguratorController struct {
+	client    client.Client
+	recorder  record.EventRecorder
+	image     string
 	namespace string
 }
 
-// New creates a new DPUWorkerOCPConfigurator.
+// New creates a new DPUWorkerOCPConfiguratorController.
 // image is the operator image used for the DaemonSet pods.
 // namespace is the operator namespace where the DaemonSet is created.
-func New(c client.Client, recorder record.EventRecorder, image, namespace string) *DPUWorkerOCPConfigurator {
-	return &DPUWorkerOCPConfigurator{
+func New(c client.Client, recorder record.EventRecorder, image, namespace string) *DPUWorkerOCPConfiguratorController {
+	return &DPUWorkerOCPConfiguratorController{
 		client:    c,
 		recorder:  recorder,
 		image:     image,
@@ -48,8 +52,24 @@ func New(c client.Client, recorder record.EventRecorder, image, namespace string
 }
 
 // EnsureDaemonSet creates or updates the DPU worker configuration DaemonSet.
-func (d *DPUWorkerOCPConfigurator) EnsureDaemonSet(ctx context.Context, provisioner *provisioningv1alpha1.DPFHCPProvisioner, operatorConfig *common.OperatorConfig) (ctrl.Result, error) {
+// If the legacy MachineConfig from the old Helm-based approach exists, the DaemonSet is skipped
+// to avoid conflicting with already-configured nodes.
+func (d *DPUWorkerOCPConfiguratorController) EnsureDaemonSet(ctx context.Context, provisioner *provisioningv1alpha1.DPFHCPProvisioner, operatorConfig *common.OperatorConfig) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues("provisioner", client.ObjectKeyFromObject(provisioner))
+
+	skip, err := d.legacyMachineConfigExists(ctx)
+	if err != nil {
+		log.Error(err, "Failed to check for legacy MachineConfig")
+		return ctrl.Result{}, err
+	}
+	if skip {
+		log.Info("Legacy MachineConfig exists, skipping DaemonSet creation", "machineconfig", legacyMachineConfigName)
+		if condErr := d.setCondition(ctx, provisioner, metav1.ConditionTrue, "LegacyMachineConfigExists",
+			"Skipping DaemonSet — legacy MachineConfig already configures DPU worker nodes"); condErr != nil {
+			log.Error(condErr, "Failed to update condition")
+		}
+		return ctrl.Result{}, nil
+	}
 
 	nodeRoleLabel, err := common.GetDPUWorkerNodeRoleLabel(ctx, d.client)
 	if err != nil {
@@ -108,7 +128,7 @@ func (d *DPUWorkerOCPConfigurator) EnsureDaemonSet(ctx context.Context, provisio
 	return ctrl.Result{}, nil
 }
 
-func (d *DPUWorkerOCPConfigurator) buildDaemonSetSpec(ds *appsv1.DaemonSet, nodeRoleLabel string, operatorConfig *common.OperatorConfig) {
+func (d *DPUWorkerOCPConfiguratorController) buildDaemonSetSpec(ds *appsv1.DaemonSet, nodeRoleLabel string, operatorConfig *common.OperatorConfig) {
 	privileged := true
 	hostPID := true
 
@@ -172,7 +192,7 @@ func (d *DPUWorkerOCPConfigurator) buildDaemonSetSpec(ds *appsv1.DaemonSet, node
 	}
 }
 
-func (d *DPUWorkerOCPConfigurator) setCondition(ctx context.Context, provisioner *provisioningv1alpha1.DPFHCPProvisioner, status metav1.ConditionStatus, reason, message string) error {
+func (d *DPUWorkerOCPConfiguratorController) setCondition(ctx context.Context, provisioner *provisioningv1alpha1.DPFHCPProvisioner, status metav1.ConditionStatus, reason, message string) error {
 	log := logf.FromContext(ctx)
 
 	condition := metav1.Condition{
@@ -204,4 +224,21 @@ func (d *DPUWorkerOCPConfigurator) setCondition(ctx context.Context, provisioner
 	}
 
 	return nil
+}
+
+func (d *DPUWorkerOCPConfiguratorController) legacyMachineConfigExists(ctx context.Context) (bool, error) {
+	mc := &unstructured.Unstructured{}
+	mc.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "machineconfiguration.openshift.io",
+		Version: "v1",
+		Kind:    "MachineConfig",
+	})
+	err := d.client.Get(ctx, client.ObjectKey{Name: legacyMachineConfigName}, mc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking for legacy MachineConfig: %w", err)
+	}
+	return true, nil
 }

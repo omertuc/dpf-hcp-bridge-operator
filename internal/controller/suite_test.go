@@ -39,10 +39,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	dpuprovisioningv1alpha1 "github.com/nvidia/doca-platform/api/provisioning/v1alpha1"
+	configv1 "github.com/openshift/api/config/v1"
 	provisioningv1alpha1 "github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/api/v1alpha1"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/common"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/bfocplookup"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpucluster"
+	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpuworkerocpconfiguratorcontroller"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/finalizer"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/hostedcluster"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/kubeconfiginjection"
@@ -91,6 +93,9 @@ var _ = BeforeSuite(func() {
 	err = hyperv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = configv1.Install(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	// +kubebuilder:scaffold:scheme
 
 	By("bootstrapping test environment")
@@ -131,6 +136,18 @@ var _ = BeforeSuite(func() {
 	err = k8sClient.Create(ctx, clustersNs)
 	Expect(err).NotTo(HaveOccurred())
 
+	By("creating Infrastructure CR")
+	infraCR := &configv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Status: configv1.InfrastructureStatus{
+			ControlPlaneTopology: configv1.HighlyAvailableTopologyMode,
+		},
+	}
+	err = k8sClient.Create(ctx, infraCR)
+	Expect(err).NotTo(HaveOccurred())
+
 	By("creating DPFHCPProvisionerConfig CR")
 	configCR := &provisioningv1alpha1.DPFHCPProvisionerConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -159,14 +176,15 @@ var _ = BeforeSuite(func() {
 			lookup.ImageChecker = &fakeImageChecker{}
 			return lookup
 		}(),
-		DPUClusterValidator:  dpucluster.NewValidator(k8sManager.GetClient(), k8sManager.GetEventRecorderFor("dpucluster-validator")),
-		SecretsValidator:     secrets.NewValidator(k8sManager.GetClient(), k8sManager.GetEventRecorderFor("secrets-validator")),
-		SecretManager:        hostedcluster.NewSecretManager(k8sManager.GetClient(), k8sManager.GetScheme()),
-		NodePoolManager:      hostedcluster.NewNodePoolManager(k8sManager.GetClient(), k8sManager.GetScheme()),
-		HostedClusterManager: hostedcluster.NewHostedClusterManager(k8sManager.GetClient(), k8sManager.GetScheme()),
-		FinalizerManager:     finalizerManager,
-		StatusSyncer:         hostedcluster.NewStatusSyncer(k8sManager.GetClient()),
-		KubeconfigInjector:   kubeconfigInjector,
+		DPUClusterValidator:                dpucluster.NewValidator(k8sManager.GetClient(), k8sManager.GetEventRecorderFor("dpucluster-validator")),
+		SecretsValidator:                   secrets.NewValidator(k8sManager.GetClient(), k8sManager.GetEventRecorderFor("secrets-validator")),
+		SecretManager:                      hostedcluster.NewSecretManager(k8sManager.GetClient(), k8sManager.GetScheme()),
+		NodePoolManager:                    hostedcluster.NewNodePoolManager(k8sManager.GetClient(), k8sManager.GetScheme()),
+		HostedClusterManager:               hostedcluster.NewHostedClusterManager(k8sManager.GetClient(), k8sManager.GetScheme()),
+		FinalizerManager:                   finalizerManager,
+		DPUWorkerOCPConfiguratorController: dpuworkerocpconfiguratorcontroller.New(k8sManager.GetClient(), k8sManager.GetEventRecorderFor(common.ProvisionerControllerName), "test-operator-image:latest", "default"),
+		StatusSyncer:                       hostedcluster.NewStatusSyncer(k8sManager.GetClient()),
+		KubeconfigInjector:                 kubeconfigInjector,
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())

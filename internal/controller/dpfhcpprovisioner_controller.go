@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,6 +44,7 @@ import (
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/common"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/bfocplookup"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpucluster"
+	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/dpuworkerocpconfiguratorcontroller"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/finalizer"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/hostedcluster"
 	"github.com/rh-ecosystem-edge/dpf-hcp-provisioner-operator/internal/controller/ignitiongenerator"
@@ -54,19 +56,20 @@ import (
 // DPFHCPProvisionerReconciler reconciles a DPFHCPProvisioner object
 type DPFHCPProvisionerReconciler struct {
 	client.Client
-	Scheme               *runtime.Scheme
-	Recorder             record.EventRecorder
-	ImageLookup          *bfocplookup.ImageLookup
-	DPUClusterValidator  *dpucluster.Validator
-	SecretsValidator     *secrets.Validator
-	SecretManager        *hostedcluster.SecretManager
-	MetalLBManager       *metallb.MetalLBManager
-	HostedClusterManager *hostedcluster.HostedClusterManager
-	NodePoolManager      *hostedcluster.NodePoolManager
-	FinalizerManager     *finalizer.Manager
-	StatusSyncer         *hostedcluster.StatusSyncer
-	KubeconfigInjector   *kubeconfiginjection.KubeconfigInjector
-	IgnitionGenerator    *ignitiongenerator.IgnitionGenerator
+	Scheme                             *runtime.Scheme
+	Recorder                           record.EventRecorder
+	ImageLookup                        *bfocplookup.ImageLookup
+	DPUClusterValidator                *dpucluster.Validator
+	SecretsValidator                   *secrets.Validator
+	SecretManager                      *hostedcluster.SecretManager
+	MetalLBManager                     *metallb.MetalLBManager
+	DPUWorkerOCPConfiguratorController *dpuworkerocpconfiguratorcontroller.DPUWorkerOCPConfiguratorController
+	HostedClusterManager               *hostedcluster.HostedClusterManager
+	NodePoolManager                    *hostedcluster.NodePoolManager
+	FinalizerManager                   *finalizer.Manager
+	StatusSyncer                       *hostedcluster.StatusSyncer
+	KubeconfigInjector                 *kubeconfiginjection.KubeconfigInjector
+	IgnitionGenerator                  *ignitiongenerator.IgnitionGenerator
 }
 
 const (
@@ -96,6 +99,9 @@ const (
 // +kubebuilder:rbac:groups=operator.dpu.nvidia.com,resources=dpfoperatorconfigs,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=provisioning.dpu.hcp.io,resources=dpfhcpprovisionerconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+// +kubebuilder:rbac:groups=machineconfiguration.openshift.io,resources=machineconfigs,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -178,6 +184,16 @@ func (r *DPFHCPProvisionerReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if result, err := r.MetalLBManager.ConfigureMetalLB(ctx, &cr, operatorConfig); err != nil || result.RequeueAfter > 0 {
 		if err != nil {
 			log.Error(err, "MetalLB configuration failed")
+		}
+		return result, err
+	}
+
+	// Feature: DPU Worker Node Configuration
+	// Deploy DaemonSet that configures networking on DPU worker nodes (bridge, routing, OVS disable)
+	log.V(1).Info("Running DPU worker OCP configurator feature")
+	if result, err := r.DPUWorkerOCPConfiguratorController.EnsureDaemonSet(ctx, &cr, operatorConfig); err != nil || result.RequeueAfter > 0 {
+		if err != nil {
+			log.Error(err, "DPU worker OCP configuration failed")
 		}
 		return result, err
 	}
@@ -353,6 +369,11 @@ func (r *DPFHCPProvisionerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(r.ignitionConfigMapToRequests),
 			builder.WithPredicates(ignitionConfigMapPredicate()),
+		).
+		Watches(
+			&appsv1.DaemonSet{},
+			handler.EnqueueRequestsFromMapFunc(r.daemonSetToRequests),
+			builder.WithPredicates(dpuWorkerDaemonSetPredicate()),
 		).
 		Named("dpfhcpprovisioner").
 		Complete(r)
@@ -630,6 +651,48 @@ func (r *DPFHCPProvisionerReconciler) ignitionConfigMapToRequests(ctx context.Co
 	}
 
 	return nil
+}
+
+// dpuWorkerDaemonSetPredicate filters DaemonSet events to only react to the DPU worker configurator DaemonSet.
+func dpuWorkerDaemonSetPredicate() predicate.Predicate {
+	isDPUWorkerDS := func(labels map[string]string) bool {
+		return labels != nil && labels[common.LabelDPFHCPProvisionerName] != ""
+	}
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isDPUWorkerDS(e.Object.GetLabels())
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return isDPUWorkerDS(e.ObjectNew.GetLabels())
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return isDPUWorkerDS(e.Object.GetLabels())
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+}
+
+// daemonSetToRequests maps DPU worker DaemonSet events to reconcile requests for the owning DPFHCPProvisioner.
+func (r *DPFHCPProvisionerReconciler) daemonSetToRequests(ctx context.Context, obj client.Object) []reconcile.Request {
+	labels := obj.GetLabels()
+	if labels == nil {
+		return nil
+	}
+
+	name := labels[common.LabelDPFHCPProvisionerName]
+	namespace := labels[common.LabelDPFHCPProvisionerNamespace]
+	if name == "" || namespace == "" {
+		return nil
+	}
+
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}}
 }
 
 // verifyIgnitionConfigMap checks that the ignition ConfigMap still exists when IgnitionConfigured=True.
