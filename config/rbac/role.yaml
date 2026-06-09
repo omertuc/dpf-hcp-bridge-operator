@@ -52,6 +52,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - infrastructures
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
@@ -81,6 +101,12 @@ rules:
   resources:
   - hostedclusters/status
   - nodepools/status
+  verbs:
+  - get
+- apiGroups:
+  - machineconfiguration.openshift.io
+  resources:
+  - machineconfigs
   verbs:
   - get
 - apiGroups:

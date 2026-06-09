@@ -13,7 +13,15 @@ import (
 const saNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 // GetOperatorImage discovers the running operator's container image by reading its own pod spec.
+// If OPERATOR_IMAGE and OPERATOR_NAMESPACE environment variables are set, those are used instead
+// of runtime detection (useful for local development with `make run`).
 func GetOwnImage(ctx context.Context, reader client.Reader) (image, namespace string, err error) {
+	if envImage := os.Getenv("OPERATOR_IMAGE"); envImage != "" {
+		if envNs := os.Getenv("OPERATOR_NAMESPACE"); envNs != "" {
+			return envImage, envNs, nil
+		}
+	}
+
 	namespace, err = getInClusterNamespace()
 	if err != nil {
 		return "", "", fmt.Errorf("detecting operator namespace: %w", err)

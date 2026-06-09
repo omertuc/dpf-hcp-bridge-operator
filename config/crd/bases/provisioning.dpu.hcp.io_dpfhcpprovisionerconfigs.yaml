@@ -66,6 +66,12 @@ spec:
                   This is useful when the management cluster runs on a cloud platform (AWS, Azure, GCP)
                   that provides native LoadBalancer support via cloud controller manager.
                 type: boolean
+              networkMTU:
+                description: |-
+                  NetworkMTU is the MTU for the br-dpu bridge on DPU worker nodes.
+                  Leave empty to inherit MTU from the physical interface.
+                  Set to any valid MTU value as a string (e.g. "1500", "9000").
+                type: string
             type: object
         type: object
         x-kubernetes-validations:

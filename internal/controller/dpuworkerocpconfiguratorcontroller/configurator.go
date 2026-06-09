@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	DaemonSetName          = "dpu-worker-ocp-configurator"
-	conditionType          = "DPUWorkerConfigured"
-	initContainerName      = "setup"
-	mainContainerName      = "p0-routing"
+	DaemonSetName           = "dpu-worker-ocp-configurator"
+	conditionType           = "DPUWorkerConfigured"
+	initContainerName       = "setup"
+	mainContainerName       = "p0-routing"
 	legacyMachineConfigName = "dpu-worker-configuration"
 )
 

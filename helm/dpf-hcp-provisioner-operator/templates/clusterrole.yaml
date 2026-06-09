@@ -73,12 +73,6 @@ rules:
     - list
     - watch
 - apiGroups:
-    - machineconfiguration.openshift.io
-  resources:
-    - machineconfigs
-  verbs:
-    - get
-- apiGroups:
     - coordination.k8s.io
   resources:
     - leases
@@ -108,6 +102,12 @@ rules:
   resources:
     - hostedclusters/status
     - nodepools/status
+  verbs:
+    - get
+- apiGroups:
+    - machineconfiguration.openshift.io
+  resources:
+    - machineconfigs
   verbs:
     - get
 - apiGroups:
