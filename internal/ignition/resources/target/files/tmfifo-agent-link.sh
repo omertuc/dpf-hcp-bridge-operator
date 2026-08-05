@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2154 # DPUMode is set by the calling environment
 
 exec > >(tee >(while read -r line; do /usr/local/bin/bflog.sh "$line"; done)) 2>&1
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2154 # DPUMode, DPUName, DPUNamespace, DPUUID, BFBRegistryURL are set by the calling environment
 
 BLOCK_DEVICE=/dev/nvme0n1
 IGNITION_FILE="/var/target.ign"
@@ -48,8 +49,7 @@ validate_ignition() {
 }
 
 update_ignition() {
-    /usr/local/bin/update_ignition.py "$IGNITION_FILE"
-    if [ $? -ne 0 ]; then
+    if ! /usr/local/bin/update_ignition.py "$IGNITION_FILE"; then
         error "Ignition" "Failed to update ignition file."
         exit 1
     fi
@@ -88,7 +88,8 @@ wait_for_host_agent() {
 
 dpu_agent() {
     local TIMEOUT=300 # 5 minutes
-    local START=$(date +%s)
+    local START
+    START=$(date +%s)
 
     until /usr/local/bin/dpuagent-client.py "$@"; do
         local ELAPSED=$(($(date +%s) - START))
@@ -136,7 +137,8 @@ validate_hardware() {
         exit 1
     fi
 
-    local dev_list=$(get_devlist)
+    local dev_list
+    dev_list=$(get_devlist)
     if [ -z "$dev_list" ]; then
         log "$(lspci -d 15b3:)"
         error "Hardware" "No devices found"
@@ -157,7 +159,7 @@ query_nvconfig() {
     local dev=$1
     shift
     local query_output
-    if ! query_output=$(mstconfig -d ${dev} -e q "$@" 2>&1); then
+    if ! query_output=$(mstconfig -d "${dev}" -e q "$@" 2>&1); then
         error "NVConfig" "Failed to query NVConfig on dev ${dev}"
         exit 1
     fi
@@ -215,12 +217,10 @@ install_rhcos() {
         esac
     done
 
-    coreos-installer install "$BLOCK_DEVICE" \
+    if ! coreos-installer install "$BLOCK_DEVICE" \
         --append-karg "$KERNEL_PARAMETERS" \
         --ignition-file "$IGNITION_FILE" \
-        --offline
-
-    if [ $? -ne 0 ]; then
+        --offline; then
         error "RHCOSInstallation" "Failed to install Red Hat CoreOS."
         exit 1
     fi

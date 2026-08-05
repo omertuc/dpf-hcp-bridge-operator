@@ -126,7 +126,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 include Makefile.e2e
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: golangci-lint lint-shell ## Run golangci-lint linter and shellcheck
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
@@ -136,6 +136,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
+
+.PHONY: lint-shell
+lint-shell: shellcheck ## Run shellcheck on all shell scripts
+	find . -name '*.sh' -not -path './vendor/*' | xargs $(SHELLCHECK)
 
 ##@ Build
 
@@ -227,6 +231,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+SHELLCHECK ?= $(LOCALBIN)/shellcheck
 YQ ?= $(LOCALBIN)/yq
 
 ## Tool Versions
@@ -237,6 +242,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.10.1
+SHELLCHECK_VERSION ?= v0.10.0
 YQ_VERSION ?= v4.44.6
 
 .PHONY: kustomize
@@ -266,6 +272,18 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: shellcheck
+shellcheck: $(SHELLCHECK) ## Download shellcheck locally if necessary.
+$(SHELLCHECK): $(LOCALBIN)
+	@{ \
+	set -e ;\
+	mkdir -p $(LOCALBIN) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	case "$${ARCH}" in amd64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac && \
+	curl -sSL "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).$${OS}.$${ARCH}.tar.xz" | \
+	tar -xJ --strip-components=1 -C $(LOCALBIN) "shellcheck-$(SHELLCHECK_VERSION)/shellcheck" ;\
+	}
 
 .PHONY: yq
 yq: $(YQ) ## Download yq locally if necessary.

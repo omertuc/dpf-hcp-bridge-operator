@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2154 # DPUMode is set by the calling environment
 
 is_zero_trust() { [ "$DPUMode" = "zero-trust" ]; }
 

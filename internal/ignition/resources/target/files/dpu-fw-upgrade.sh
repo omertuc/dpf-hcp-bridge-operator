@@ -2,6 +2,7 @@
 
 exec > >(tee >(while read -r line; do /usr/local/bin/bflog.sh "$line"; done)) 2>&1
 
+# shellcheck disable=SC2154 # DPUMode is set by the calling environment
 is_zero_trust() { [ "$DPUMode" = "zero-trust" ]; }
 
 LOG="/tmp/dpu-fw-upgrade.log"
@@ -45,8 +46,11 @@ update_progress() { true; }
 bind_partitions() { true; }
 
 log "INFO: Sourcing firmware scripts"
+# shellcheck source=/dev/null
 source /opt/mellanox/bfb/atf-uefi
+# shellcheck source=/dev/null
 source /opt/mellanox/bfb/nic-fw
+# shellcheck source=/dev/null
 source /opt/mellanox/bfb/bmc
 
 fw_condition() {
@@ -64,8 +68,9 @@ if ! update_atf_uefi; then
     fw_error "ATF/UEFI update failed"
 fi
 
-cx_pcidev=$(lspci -nD 2>/dev/null | grep 15b3:a2d[26c] | awk '{print $1}' | head -1)
-cx_dev_id=$(lspci -nD -s ${cx_pcidev} 2>/dev/null | awk -F ':' '{print strtonum("0x" $NF)}')
+cx_pcidev=$(lspci -nD 2>/dev/null | grep '15b3:a2d[26c]' | awk '{print $1}' | head -1)
+# shellcheck disable=SC2034 # used by sourced scripts
+cx_dev_id=$(lspci -nD -s "${cx_pcidev}" 2>/dev/null | awk -F ':' '{print strtonum("0x" $NF)}')
 
 flint_device=$cx_pcidev
 
@@ -73,7 +78,8 @@ if mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
     flint_device=$(grep -l "PCI_SLOT_NAME=$cx_pcidev" /sys/class/fwctl/*/device/uevent | awk -F/ '{print "/dev/fwctl/"$5}')
 fi
 
-PSID=$(mstflint -d $flint_device q | grep PSID | awk '{print $NF}')
+# shellcheck disable=SC2034 # used by sourced scripts
+PSID=$(mstflint -d "$flint_device" q | grep PSID | awk '{print $NF}')
 
 log "INFO: Updating NIC firmware"
 fw_condition NICFirmwareUpgraded False Upgrading "NIC firmware upgrade in progress"
@@ -86,22 +92,28 @@ nic_elapsed=$(($(date +%s) - nic_start))
 fw_condition NICFirmwareUpgraded True Upgraded "NIC firmware upgrade completed in ${nic_elapsed}s"
 
 # BMC Update
-RC=0 # Variable used in /opt/mellanox/bfb/bmc
+# shellcheck disable=SC2034 # used by sourced /opt/mellanox/bfb/bmc
+RC=0
 # The .pldm golden image update path has no version check and would redundantly
 # flash on every boot. Disable since BMC/CEC firmware updates are sufficient.
+# shellcheck disable=SC2034 # used by sourced scripts
 UPDATE_DPU_GOLDEN_IMAGE="no"
+# shellcheck disable=SC2034 # used by sourced scripts
 UPDATE_NIC_FW_GOLDEN_IMAGE="no"
 # # New BMC Credentials
 BMC_USER="firmware_updater"
+# shellcheck disable=SC2018,SC2019 # ASCII-only is intentional for BMC password
 BMC_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 4)-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 4)_$(tr -dc '0-9' </dev/urandom | head -c 2)$(tr -dc 'a-z' </dev/urandom | head -c 1)$(tr -dc 'A-Z' </dev/urandom | head -c 1)"
 # # BMC Firmware Update
+# shellcheck disable=SC2034 # used by sourced scripts
 BMC_REBOOT="yes"
+# shellcheck disable=SC2034 # used by sourced scripts
 CEC_REBOOT="yes"
 USER_ID=8
 
 pre_bmc_components_update() {
     ipmitool user set name $USER_ID $BMC_USER
-    ipmitool user set password $USER_ID $BMC_PASSWORD
+    ipmitool user set password $USER_ID "$BMC_PASSWORD"
     ipmitool user enable $USER_ID
     ipmitool channel setaccess 1 $USER_ID ipmi=on
     ipmitool user priv $USER_ID 0x4 1

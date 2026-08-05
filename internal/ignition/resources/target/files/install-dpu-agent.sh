@@ -9,6 +9,7 @@ fi
 
 echo "Installing dpu-agent..."
 
+# shellcheck disable=SC2154 # DPUMode, BFBRegistryURL are set by the calling environment
 is_zero_trust() { [ "$DPUMode" = "zero-trust" ]; }
 
 install_error() {
@@ -38,7 +39,7 @@ if is_zero_trust; then
         sleep 5
     done
 
-    cd /tmp
+    cd /tmp || exit 1
     dnf download dpu-agent --disablerepo=* --repofrompath=zt-agentrepo,"$BFBRegistryURL/rpm/" || install_error "dnf download dpu-agent from bfb-registry failed"
 else
     TIMEOUT=900
@@ -55,7 +56,7 @@ else
         sleep 1
     done
 
-    cd /tmp
+    cd /tmp || exit 1
     dnf download dpu-agent --disablerepo=* --enablerepo=agentrepo || install_error "dnf download dpu-agent failed"
 fi
 

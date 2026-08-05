@@ -37,7 +37,7 @@ ensure_rule() {
         return 0
     fi
     echo "Adding rule: from $br_dpu_ip/$PREFIX_LEN lookup 100"
-    ip $IP_FLAG rule add from $br_dpu_ip/$PREFIX_LEN lookup 100
+    ip $IP_FLAG rule add from "$br_dpu_ip"/$PREFIX_LEN lookup 100
 }
 
 ensure_route() {
@@ -46,7 +46,7 @@ ensure_route() {
         return 0
     fi
     echo "Adding route: $dst $*  table 100"
-    ip $IP_FLAG route add $dst "$@" table 100
+    ip $IP_FLAG route add "$dst" "$@" table 100
 }
 
 configure_routing() {
