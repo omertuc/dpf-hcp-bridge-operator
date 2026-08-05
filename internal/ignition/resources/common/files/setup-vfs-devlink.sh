@@ -9,18 +9,18 @@ LAST_ERROR=""
 ACTION="${1:-}"
 
 elapsed() {
-  echo $(($(date +%s) - START_TIME))
+    echo $(($(date +%s) - START_TIME))
 }
 
 check_timeout() {
-  if [ "$(elapsed)" -ge "$TIMEOUT" ]; then
-    echo "ERROR: setup-vfs-devlink ($ACTION) timed out after ${TIMEOUT}s: ${LAST_ERROR}"
-    if [ "$ACTION" = "create-vfs" ] && ! is_zero_trust; then
-      /usr/local/bin/dpuagent-client.py send-error "VFSetupTimedOut" \
-        "setup-vfs-devlink ($ACTION) failed after ${TIMEOUT}s: ${LAST_ERROR}"
+    if [ "$(elapsed)" -ge "$TIMEOUT" ]; then
+        echo "ERROR: setup-vfs-devlink ($ACTION) timed out after ${TIMEOUT}s: ${LAST_ERROR}"
+        if [ "$ACTION" = "create-vfs" ] && ! is_zero_trust; then
+            /usr/local/bin/dpuagent-client.py send-error "VFSetupTimedOut" \
+                "setup-vfs-devlink ($ACTION) failed after ${TIMEOUT}s: ${LAST_ERROR}"
+        fi
+        exit 1
     fi
-    exit 1
-  fi
 }
 
 get_lspci_devlist() {
@@ -28,136 +28,136 @@ get_lspci_devlist() {
 }
 
 get_steering_mode() {
-  local dev=$1
-  devlink dev param show "pci/${dev}" name flow_steering_mode 2>/dev/null | tail -1 | awk '{print $NF}'
+    local dev=$1
+    devlink dev param show "pci/${dev}" name flow_steering_mode 2>/dev/null | tail -1 | awk '{print $NF}'
 }
 
 set_steering_mode() {
-  local dev=$1
-  local mode=$2
-  devlink dev param set "pci/${dev}" name flow_steering_mode value "${mode}" cmode runtime
+    local dev=$1
+    local mode=$2
+    devlink dev param set "pci/${dev}" name flow_steering_mode value "${mode}" cmode runtime
 }
 
 # Returns 0 if all ConnectX devices are in switchdev mode, 1 otherwise.
 verify_switchdev() {
-  for dev in $(get_lspci_devlist); do
-    mode=$(devlink dev eswitch show "pci/${dev}" 2>/dev/null | awk '{print $3}')
-    if [ "$mode" != "switchdev" ]; then
-      LAST_ERROR="pci/${dev} not in switchdev mode (mode=${mode})"
-      echo "WARN: ${LAST_ERROR}"
-      return 1
-    fi
-  done
-  return 0
+    for dev in $(get_lspci_devlist); do
+        mode=$(devlink dev eswitch show "pci/${dev}" 2>/dev/null | awk '{print $3}')
+        if [ "$mode" != "switchdev" ]; then
+            LAST_ERROR="pci/${dev} not in switchdev mode (mode=${mode})"
+            echo "WARN: ${LAST_ERROR}"
+            return 1
+        fi
+    done
+    return 0
 }
 
 do_switchdev() {
-  echo "INFO: Configuring steering mode before switchdev..."
-  for dev in $(get_lspci_devlist); do
-    steering=$(get_steering_mode "$dev")
-    if [ "$steering" = "dmfs" ]; then
-      echo "INFO: pci/${dev} steering mode is dmfs, setting to smfs..."
-      mode=$(devlink dev eswitch show "pci/${dev}" 2>/dev/null | awk '{print $3}')
-      if [ "$mode" != "legacy" ]; then
-        devlink dev eswitch set "pci/${dev}" mode legacy
-      fi
-      if ! set_steering_mode "$dev" smfs; then
-        LAST_ERROR="Failed to set steering mode smfs on ${dev}"
-        echo "WARN: ${LAST_ERROR}"
-      fi
-    fi
-  done
-
-  echo "INFO: Setting eswitch mode to switchdev..."
-  while ! verify_switchdev; do
-    check_timeout
-
+    echo "INFO: Configuring steering mode before switchdev..."
     for dev in $(get_lspci_devlist); do
-      if ! devlink dev eswitch set "pci/${dev}" mode switchdev; then
-        LAST_ERROR="devlink switchdev on ${dev} failed"
-        echo "WARN: ${LAST_ERROR}"
-      fi
+        steering=$(get_steering_mode "$dev")
+        if [ "$steering" = "dmfs" ]; then
+            echo "INFO: pci/${dev} steering mode is dmfs, setting to smfs..."
+            mode=$(devlink dev eswitch show "pci/${dev}" 2>/dev/null | awk '{print $3}')
+            if [ "$mode" != "legacy" ]; then
+                devlink dev eswitch set "pci/${dev}" mode legacy
+            fi
+            if ! set_steering_mode "$dev" smfs; then
+                LAST_ERROR="Failed to set steering mode smfs on ${dev}"
+                echo "WARN: ${LAST_ERROR}"
+            fi
+        fi
     done
 
-    sleep 5
-  done
+    echo "INFO: Setting eswitch mode to switchdev..."
+    while ! verify_switchdev; do
+        check_timeout
 
-  echo "INFO: Finished switchdev"
+        for dev in $(get_lspci_devlist); do
+            if ! devlink dev eswitch set "pci/${dev}" mode switchdev; then
+                LAST_ERROR="devlink switchdev on ${dev} failed"
+                echo "WARN: ${LAST_ERROR}"
+            fi
+        done
+
+        sleep 5
+    done
+
+    echo "INFO: Finished switchdev"
 }
 
 do_create_vfs() {
-  echo "INFO: Verifying switchdev mode and creating VFs..."
-  if ! verify_switchdev; then
-    echo "ERROR: Failed to verify switchdev mode"
-    exit 1
-  fi
-
-  local fail_count=0
-  local last_rebind=0
-
-  while true; do
-    check_timeout
-    LAST_ERROR=""
-
-    if is_zero_trust; then
-      echo "INFO: Zero-trust mode, skipping configure-host-vfs and VF check"
-      break
+    echo "INFO: Verifying switchdev mode and creating VFs..."
+    if ! verify_switchdev; then
+        echo "ERROR: Failed to verify switchdev mode"
+        exit 1
     fi
 
-    if ! /usr/local/bin/dpuagent-client.py configure-host-vfs; then
-      LAST_ERROR="configure-host-vfs failed"
-      echo "WARN: ${LAST_ERROR}"
-    else
-      echo "INFO: configure-host-vfs call succeeded"
-    fi
+    local fail_count=0
+    local last_rebind=0
 
-    vf_count=$(devlink port show 2>/dev/null | grep -c "flavour pcivf")
-    if [ "$vf_count" -gt 0 ]; then
-      echo "INFO: Found $vf_count VFs"
-      break
-    fi
+    while true; do
+        check_timeout
+        LAST_ERROR=""
 
-    if [ -n "$LAST_ERROR" ]; then
-      LAST_ERROR="no VFs found after configure-host-vfs"
-      echo "WARN: ${LAST_ERROR}"
-    fi
+        if is_zero_trust; then
+            echo "INFO: Zero-trust mode, skipping configure-host-vfs and VF check"
+            break
+        fi
 
-    fail_count=$((fail_count + 1))
-    # After 3 failed VF creation attempts, rebind the host driver to recover from a bad mlx5_core driver state.
-    # Rate-limited to once per 480s (8min) because the rebind
-    # is blocking and the host needs time to stabilize after a driver reload.
-    if [ "$fail_count" -ge 3 ] && [ $(($(date +%s) - last_rebind)) -ge 480 ]; then
-      echo "WARN: $fail_count consecutive failures, requesting host driver rebind"
-      /usr/local/bin/dpuagent-client.py rebind-host-driver || echo "WARN: rebind-host-driver failed"
-      last_rebind=$(date +%s)
-      fail_count=0
-    fi
+        if ! /usr/local/bin/dpuagent-client.py configure-host-vfs; then
+            LAST_ERROR="configure-host-vfs failed"
+            echo "WARN: ${LAST_ERROR}"
+        else
+            echo "INFO: configure-host-vfs call succeeded"
+        fi
 
-    sleep 30
-  done
+        vf_count=$(devlink port show 2>/dev/null | grep -c "flavour pcivf")
+        if [ "$vf_count" -gt 0 ]; then
+            echo "INFO: Found $vf_count VFs"
+            break
+        fi
 
-  echo "INFO: Waiting for default route..."
-  while true; do
-    check_timeout
-    if ip route show default | grep -q default; then
-      break
-    fi
-    sleep 5
-  done
-  echo "INFO: Default route available"
+        if [ -n "$LAST_ERROR" ]; then
+            LAST_ERROR="no VFs found after configure-host-vfs"
+            echo "WARN: ${LAST_ERROR}"
+        fi
 
-  echo "INFO: Finished create-vfs"
+        fail_count=$((fail_count + 1))
+        # After 3 failed VF creation attempts, rebind the host driver to recover from a bad mlx5_core driver state.
+        # Rate-limited to once per 480s (8min) because the rebind
+        # is blocking and the host needs time to stabilize after a driver reload.
+        if [ "$fail_count" -ge 3 ] && [ $(($(date +%s) - last_rebind)) -ge 480 ]; then
+            echo "WARN: $fail_count consecutive failures, requesting host driver rebind"
+            /usr/local/bin/dpuagent-client.py rebind-host-driver || echo "WARN: rebind-host-driver failed"
+            last_rebind=$(date +%s)
+            fail_count=0
+        fi
+
+        sleep 30
+    done
+
+    echo "INFO: Waiting for default route..."
+    while true; do
+        check_timeout
+        if ip route show default | grep -q default; then
+            break
+        fi
+        sleep 5
+    done
+    echo "INFO: Default route available"
+
+    echo "INFO: Finished create-vfs"
 }
 
 case "$ACTION" in
 switchdev)
-  do_switchdev
-  ;;
+    do_switchdev
+    ;;
 create-vfs)
-  do_create_vfs
-  ;;
+    do_create_vfs
+    ;;
 *)
-  echo "Usage: $0 {switchdev|create-vfs}"
-  exit 1
-  ;;
+    echo "Usage: $0 {switchdev|create-vfs}"
+    exit 1
+    ;;
 esac

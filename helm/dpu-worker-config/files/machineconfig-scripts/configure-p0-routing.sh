@@ -15,7 +15,7 @@ while [ ! -f "$PRIMARY_IP_FILE" ] || [ ! -s "$PRIMARY_IP_FILE" ]; do
     sleep $CHECK_INTERVAL
 done
 
-br_dpu_ip=$(tr -d '[:space:]' < "$PRIMARY_IP_FILE")
+br_dpu_ip=$(tr -d '[:space:]' <"$PRIMARY_IP_FILE")
 echo "Using br-dpu IP from $PRIMARY_IP_FILE: $br_dpu_ip"
 
 if [[ "$br_dpu_ip" =~ : ]]; then
@@ -33,7 +33,7 @@ else
 fi
 
 ensure_rule() {
-    if ip $IP_FLAG -j rule list | jq -e --arg src "$br_dpu_ip" '.[] | select(.src == $src and .table == "100")' > /dev/null 2>&1; then
+    if ip $IP_FLAG -j rule list | jq -e --arg src "$br_dpu_ip" '.[] | select(.src == $src and .table == "100")' >/dev/null 2>&1; then
         return 0
     fi
     echo "Adding rule: from $br_dpu_ip/$PREFIX_LEN lookup 100"
@@ -41,8 +41,9 @@ ensure_rule() {
 }
 
 ensure_route() {
-    local dst="$1"; shift
-    if ip $IP_FLAG -j route show table 100 | jq -e --arg dst "$dst" '.[] | select(.dst == $dst)' > /dev/null 2>&1; then
+    local dst="$1"
+    shift
+    if ip $IP_FLAG -j route show table 100 | jq -e --arg dst "$dst" '.[] | select(.dst == $dst)' >/dev/null 2>&1; then
         return 0
     fi
     echo "Adding route: $dst $*  table 100"

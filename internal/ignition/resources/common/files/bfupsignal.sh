@@ -6,7 +6,7 @@
 
 os_up_path="/sys/devices/platform/MLNXBF04:00/driver/os_up"
 if [ ! -e "${os_up_path}" ]; then
-  os_up_path="/sys/devices/platform/MLNXBF04:00/os_up"
+    os_up_path="/sys/devices/platform/MLNXBF04:00/os_up"
 fi
 
 [ ! -e "${os_up_path}" ] && exit

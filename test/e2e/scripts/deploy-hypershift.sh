@@ -51,7 +51,7 @@ else
     HYPERSHIFT_CONTAINER_ID=$("${CONTAINER_COMMAND}" create --pull always "${HYPERSHIFT_IMAGE}")
     "${CONTAINER_COMMAND}" cp "${HYPERSHIFT_CONTAINER_ID}:/usr/bin/hypershift" "${HYPERSHIFT_BIN_DIR}/hypershift"
     "${CONTAINER_COMMAND}" rm -f "${HYPERSHIFT_CONTAINER_ID}"
-    HYPERSHIFT_CONTAINER_ID=""  # Clear ID after successful removal
+    HYPERSHIFT_CONTAINER_ID="" # Clear ID after successful removal
     chmod 0755 "${HYPERSHIFT_BIN_DIR}/hypershift"
 
     HYPERSHIFT_BIN="${HYPERSHIFT_BIN_DIR}/hypershift"

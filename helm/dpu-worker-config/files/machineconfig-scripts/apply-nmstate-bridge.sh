@@ -12,7 +12,7 @@ read_node_ip() {
         return 1
     fi
 
-    NODE_IP=$(tr -d '[:space:]' < "$IP_HINT_FILE")
+    NODE_IP=$(tr -d '[:space:]' <"$IP_HINT_FILE")
 
     if [[ -z "$NODE_IP" ]]; then
         echo "ERROR: IP hint file is empty: $IP_HINT_FILE" >&2
@@ -29,14 +29,14 @@ wait_for_bridge_ip() {
     local elapsed=0
 
     echo "INFO: Waiting up to ${timeout}s for $bridge to acquire $NODE_IP..."
-    while (( elapsed < timeout )); do
+    while ((elapsed < timeout)); do
         if ip -o addr show dev "$bridge" | grep -qw "$NODE_IP"; then
             echo "INFO: $bridge has $NODE_IP."
             ip addr show dev "$bridge"
             return 0
         fi
         sleep "$interval"
-        elapsed=$(( elapsed + interval ))
+        elapsed=$((elapsed + interval))
     done
 
     echo "ERROR: $bridge did not acquire $NODE_IP within ${timeout}s." >&2
@@ -50,7 +50,7 @@ set_bridge_rp_filter_loose() {
 }
 
 validate_bridge_exists() {
-    if ip link show "$BRIDGE_NAME" &> /dev/null; then
+    if ip link show "$BRIDGE_NAME" &>/dev/null; then
         echo "INFO: Bridge '$BRIDGE_NAME' already exists, waiting for IP..."
         wait_for_bridge_ip "$BRIDGE_NAME"
         set_bridge_rp_filter_loose "$BRIDGE_NAME"
@@ -94,7 +94,7 @@ apply_linux_bridge() {
         --arg phys "$iface" \
         --arg mtu_val "$mtu_arg" \
         --argjson phys_routes "$routes_json" \
-    '
+        '
     .interfaces[0] as $p |
     (if $mtu_val != "" then {"mtu": ($mtu_val | tonumber)} else {} end) as $mtu_obj |
     {
@@ -126,7 +126,7 @@ apply_linux_bridge() {
     + if ($phys_routes | length) > 0 then
         { "routes": { "config": [$phys_routes[] | .["next-hop-interface"] = $br] } }
       else {} end
-    ' > /tmp/br-dpu-config.yml
+    ' >/tmp/br-dpu-config.yml
 
     echo "--- Generated NMState desired state ---"
     cat /tmp/br-dpu-config.yml

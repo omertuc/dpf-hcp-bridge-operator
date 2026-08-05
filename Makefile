@@ -112,8 +112,12 @@ verify-generate: ## Verify that all generated files are up to date.
 	./hack/verify-generate.sh
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
+fmt: fmt-shell ## Run go fmt against code.
 	go fmt ./...
+
+.PHONY: fmt-shell
+fmt-shell: shfmt ## Run shfmt against shell scripts.
+	find . -name '*.sh' -not -path './vendor/*' | xargs $(SHFMT) -i 4 -w
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -138,8 +142,9 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
 
 .PHONY: lint-shell
-lint-shell: shellcheck ## Run shellcheck on all shell scripts
+lint-shell: shellcheck shfmt ## Run shellcheck and shfmt on all shell scripts
 	find . -name '*.sh' -not -path './vendor/*' | xargs $(SHELLCHECK)
+	find . -name '*.sh' -not -path './vendor/*' | xargs $(SHFMT) -i 4 -d
 
 ##@ Build
 
@@ -232,6 +237,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 SHELLCHECK ?= $(LOCALBIN)/shellcheck
+SHFMT ?= $(LOCALBIN)/shfmt
 YQ ?= $(LOCALBIN)/yq
 
 ## Tool Versions
@@ -243,6 +249,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.10.1
 SHELLCHECK_VERSION ?= v0.10.0
+SHFMT_VERSION ?= v3.11.0
 YQ_VERSION ?= v4.44.6
 
 .PHONY: kustomize
@@ -284,6 +291,11 @@ $(SHELLCHECK): $(LOCALBIN)
 	curl -sSL "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).$${OS}.$${ARCH}.tar.xz" | \
 	tar -xJ --strip-components=1 -C $(LOCALBIN) "shellcheck-$(SHELLCHECK_VERSION)/shellcheck" ;\
 	}
+
+.PHONY: shfmt
+shfmt: $(SHFMT) ## Download shfmt locally if necessary.
+$(SHFMT): $(LOCALBIN)
+	$(call go-install-tool,$(SHFMT),mvdan.cc/sh/v3/cmd/shfmt,$(SHFMT_VERSION))
 
 .PHONY: yq
 yq: $(YQ) ## Download yq locally if necessary.

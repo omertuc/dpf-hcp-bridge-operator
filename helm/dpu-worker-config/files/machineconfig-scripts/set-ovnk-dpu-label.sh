@@ -17,7 +17,7 @@ fi
 
 # Merge: deduplicate labels from all sources
 declare -A label_map
-IFS=',' read -ra ALL_LABELS <<< "${existing_labels:+${existing_labels},}${DPF_LABEL}"
+IFS=',' read -ra ALL_LABELS <<<"${existing_labels:+${existing_labels},}${DPF_LABEL}"
 for label in "${ALL_LABELS[@]}"; do
     label=$(echo "$label" | xargs)
     [[ -z "$label" ]] && continue
@@ -33,7 +33,7 @@ done
 echo "set-ovnk-dpu-label: nodenet labels='${existing_labels}', merged='${merged}'" >&2
 
 mkdir -p "$(dirname "$DPF_DROPIN")"
-cat > "$DPF_DROPIN" <<EOF
+cat >"$DPF_DROPIN" <<EOF
 [Service]
 Environment="CUSTOM_KUBELET_LABELS=${merged}"
 EOF

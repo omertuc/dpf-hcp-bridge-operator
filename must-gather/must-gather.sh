@@ -53,13 +53,12 @@ echo "# DPF HCP Provisioner Operator must-gather"
 echo "# OPERATOR_NAMESPACE: ${OPERATOR_NAMESPACE}"
 echo
 
-
 inspect() {
     local inspect_err
     inspect_err="$(mktemp)"
     # shellcheck disable=SC2086
     if ! oc adm inspect ${log_collection_args} --dest-dir "${BASE_COLLECTION_PATH}" "$@" \
-            >/dev/null 2>"${inspect_err}"; then
+        >/dev/null 2>"${inspect_err}"; then
         echo "  [warn] inspect failed: $* :: $(<"${inspect_err}")"
     fi
     rm -f "${inspect_err}"
@@ -71,13 +70,13 @@ inspect() {
 # HyperShift, or this operator.
 # ---------------------------------------------------------------------------
 CRD_LIST=$(oc get crd \
-    -o jsonpath='{range .items[*]}{.metadata.name},{.spec.scope}{"\n"}{end}' 2>/dev/null \
-    | grep -E 'nvidia|\.dpu\.hcp\.io|\.hypershift\.openshift\.io' \
-    || true)
+    -o jsonpath='{range .items[*]}{.metadata.name},{.spec.scope}{"\n"}{end}' 2>/dev/null |
+    grep -E 'nvidia|\.dpu\.hcp\.io|\.hypershift\.openshift\.io' ||
+    true)
 
-readarray -t CRDS          < <(echo "${CRD_LIST}" | cut -d',' -f1 | grep -v '^$')
-readarray -t CLUSTER_SCOPED_CRS < <(echo "${CRD_LIST}" | grep ',Cluster$'   | cut -d',' -f1 | grep -v '^$')
-readarray -t ALL_NS_CRS    < <(echo "${CRD_LIST}" | grep ',Namespaced$' | cut -d',' -f1 | grep -v '^$')
+readarray -t CRDS < <(echo "${CRD_LIST}" | cut -d',' -f1 | grep -v '^$')
+readarray -t CLUSTER_SCOPED_CRS < <(echo "${CRD_LIST}" | grep ',Cluster$' | cut -d',' -f1 | grep -v '^$')
+readarray -t ALL_NS_CRS < <(echo "${CRD_LIST}" | grep ',Namespaced$' | cut -d',' -f1 | grep -v '^$')
 
 if [[ ${#CRDS[@]} -eq 0 ]]; then
     echo "  [warn] no relevant CRDs found on cluster"
@@ -161,15 +160,15 @@ function get_dpfhcpprovisioner_and_hcp_namespaces() {
             echo "  [warn] HCP namespace '${HCP_NS}' not found (cluster not yet provisioned?)"
         fi
 
-    done <<< "${PROVISIONERS}"
+    done <<<"${PROVISIONERS}"
 }
 
 function get_dpf_rbac() {
     echo
     echo "Collecting DPF/DPF-HCP-Provisioning/HyperShift RBAC resources..."
     local rbac_resources
-    rbac_resources=$(oc get clusterroles,clusterrolebindings -o name 2>/dev/null \
-        | grep -iE 'dpf|dpu|nvidia|hypershift|hcp' || true)
+    rbac_resources=$(oc get clusterroles,clusterrolebindings -o name 2>/dev/null |
+        grep -iE 'dpf|dpu|nvidia|hypershift|hcp' || true)
     if [[ -n "${rbac_resources}" ]]; then
         # shellcheck disable=SC2086
         inspect ${rbac_resources}
@@ -198,8 +197,8 @@ function get_hosted_cluster_resources() {
 
         local kubeconfig="${TMPDIR}/${cluster_name}.kubeconfig"
         if ! oc get secret "${secret_name}" -n "${DPF_OPERATOR_NS}" \
-                -o jsonpath='{.data.super-admin\.conf}' 2>/dev/null \
-                | base64 -d >"${kubeconfig}" 2>/dev/null; then
+            -o jsonpath='{.data.super-admin\.conf}' 2>/dev/null |
+            base64 -d >"${kubeconfig}" 2>/dev/null; then
             echo "  [warn] could not extract kubeconfig for DPUCluster ${cluster_name}"
             continue
         fi
@@ -250,9 +249,9 @@ function get_hosted_cluster_resources() {
             fi
             PIDS+=($!)
         done < <(oc --kubeconfig="${kubeconfig}" get crd \
-            -o jsonpath='{range .items[*]}{.metadata.name},{.spec.scope}{"\n"}{end}' 2>/dev/null \
-            | grep -E 'nvidia|\.dpu\.hcp\.io' \
-            || true)
+            -o jsonpath='{range .items[*]}{.metadata.name},{.spec.scope}{"\n"}{end}' 2>/dev/null |
+            grep -E 'nvidia|\.dpu\.hcp\.io' ||
+            true)
 
         # DPF/DPU/NVIDIA RBAC on the hosted cluster
         local hc_rbac
